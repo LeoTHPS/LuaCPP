@@ -1003,7 +1003,7 @@ private:
 		{
 			if (auto data = lua_touserdata(lua, static_cast<int>(index)))
 			{
-				value = data;
+				value = reinterpret_cast<T>(data);
 
 				return true;
 			}
