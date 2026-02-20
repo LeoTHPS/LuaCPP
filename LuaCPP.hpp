@@ -215,27 +215,32 @@ private:
 				number = value;
 			else if constexpr (TYPE == Types::String)
 				string = value;
-			else if constexpr (TYPE == Types::Table)
-				table = &value;
-			else if constexpr (TYPE == Types::Function)
-			{
-				function_type = value.GetType();
-
-				switch (function_type)
-				{
-					case FunctionTypes::C:
-						function_c = value.context->function;
-						break;
-
-					case FunctionTypes::Lua:
-						function_lua = value.context->reference;
-						break;
-				}
-			}
 			else if constexpr (TYPE == Types::UserData)
 				; // TODO: implement
 			else if constexpr (TYPE == Types::Thread)
 				; // TODO: implement
+		}
+		explicit Data(const Table& value)
+			: type(Types::Table),
+			function_type(FunctionTypes::None),
+			table(const_cast<Table*>(&value))
+		{
+		}
+		template<typename F>
+		explicit Data(const Function<F>& value)
+			: type(Types::Function),
+			function_type(value.GetType())
+		{
+			switch (function_type)
+			{
+				case FunctionTypes::C:
+					function_c = value.GetCFunction();
+					break;
+
+				case FunctionTypes::Lua:
+					function_lua = value.GetReference();
+					break;
+			}
 		}
 	};
 
@@ -249,12 +254,10 @@ private:
 			: Exception(std::move(function), lua_tostring(lua, -1))
 		{
 		}
-
 		Exception(std::string&& function, std::string&& message)
 			: message(message + " [Function: " + function + "]")
 		{
 		}
-
 		Exception(std::string&& file, size_t line, std::string&& message)
 			: message(message + " [File: " + file + ", Line: " + std::to_string(line) + "]")
 		{
@@ -379,6 +382,11 @@ public:
 			context.reset();
 		}
 
+		operator bool() const
+		{
+			return context.get() != nullptr;
+		}
+
 		auto& operator = (Table&& table)
 		{
 			context = std::move(table.context);
@@ -396,7 +404,6 @@ public:
 	template<typename T, typename ... TArgs>
 	class Function<T(TArgs ...)>
 	{
-		friend Data;
 		friend LuaCPP;
 
 		typedef std::function<T(TArgs ...)> CFunction;
@@ -526,6 +533,16 @@ public:
 		constexpr auto GetType() const
 		{
 			return context ? context->type : FunctionTypes::None;
+		}
+
+		constexpr auto GetCFunction() const
+		{
+			return context ? &context->function : nullptr;
+		}
+
+		constexpr auto GetReference() const
+		{
+			return context ? context->reference : 0;
 		}
 
 		constexpr auto GetReferenceCount() const
@@ -846,9 +863,7 @@ public:
 			return -1;
 		}
 
-		value = Pop<T>(GetHandle());
-
-		return 1;
+		return Pop<T>(GetHandle(), value) ? 1 : 0;
 	}
 
 	// @throw std::exception
@@ -865,20 +880,18 @@ public:
 	}
 
 	// @throw std::exception
-	template<auto F>
+	template<auto VALUE>
 	void SetGlobal(const std::string_view& name)
 	{
 		assert(GetHandle() != nullptr);
 
-		if constexpr (Is_CFunction<decltype(F)>::Value)
+		if constexpr (Is_CFunction<decltype(VALUE)>::Value)
 		{
-			lua_pushcclosure(GetHandle(), &CFunction<F>::Execute, 0);
+			lua_pushcclosure(GetHandle(), &CFunction<VALUE>::Execute, 0);
 			lua_setglobal(GetHandle(), name.data());
-
-			return;
 		}
 		else
-			return SetGlobal(name, F);
+			return SetGlobal(name, VALUE);
 	}
 	// @throw std::exception
 	template<typename T>
@@ -1206,7 +1219,7 @@ private:
 				return 1;
 
 			case FunctionTypes::Lua:
-				if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.context->reference); value_type != LUA_TFUNCTION)
+				if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.GetReference()); value_type != LUA_TFUNCTION)
 					throw Exception("LuaCPP::Push", "lua_rawgeti returned " + std::to_string(value_type));
 				return 1;
 		}
