@@ -267,7 +267,6 @@ private:
 	};
 
 public:
-	/*
 	class Table
 	{
 		friend LuaCPP;
@@ -393,7 +392,6 @@ public:
 			return *this;
 		}
 	};
-	*/
 
 	template<typename T, typename ... TArgs>
 	class Function<T(TArgs ...)>
@@ -766,7 +764,6 @@ public:
 		: lua(luaL_newstate())
 	{
 	}
-
 	LuaCPP(LuaCPP&& state)
 		: lua(state.lua)
 	{
@@ -836,7 +833,6 @@ public:
 		assert(GetHandle() != nullptr);
 
 		static_assert(Get_Type<T>::Value != Types::None);
-		static_assert(Get_Type<T>::Value != Types::Function);
 
 		auto type = lua_getglobal(GetHandle(), name.data());
 
@@ -851,32 +847,6 @@ public:
 		}
 
 		value = Pop<T>(GetHandle());
-
-		return 1;
-	}
-	// @throw std::exception
-	// @return 0 on not found
-	// @return -1 on invalid type
-	template<typename T, typename ... TArgs>
-	int  GetGlobal(const std::string_view& name, Function<T(TArgs ...)>& value)
-	{
-		assert(GetHandle() != nullptr);
-
-		auto type = lua_getglobal(GetHandle(), name.data());
-
-		if (type == LUA_TNONE)
-			return 0;
-
-		if (type != LUA_TFUNCTION)
-		{
-			Pop(GetHandle());
-
-			return -1;
-		}
-
-		lua_pushvalue(GetHandle(), 1);
-
-		value = Function<T(TArgs ...)>(GetHandle(), luaL_ref(GetHandle(), LUA_REGISTRYINDEX));
 
 		return 1;
 	}
@@ -969,41 +939,55 @@ public:
 
 private:
 	template<typename T>
-	static bool Pop(lua_State* lua, T& value)
+	static           bool Pop(lua_State* lua, T& value)
 	{
 		static_assert(Get_Type<T>::Value != Types::None);
 
-		if constexpr (!Is_Optional<T>::Value)
-			if (lua_gettop(lua) == 0)
-				return false;
+		if (lua_gettop(lua) == 0)
+			return false;
 
-		if constexpr (Is_Table<T>::Value)
-			return Table_Pop(lua, value);
-		else if constexpr (Is_Tuple<T>::Value)
-			return Tuple_Pop(lua, value);
-		else if constexpr (Is_Optional<T>::Value)
-			return Optional_Pop(lua, value);
-		else
-		{
-			if (!Peek<T>(lua, 1, value))
-				return false;
+		if (!Peek(lua, 1, value))
+			return false;
 
-			lua_pop(lua, 1);
+		lua_pop(lua, 1);
 
-			return true;
-		}
+		return true;
 	}
-	static void Pop(lua_State* lua, size_t size = 1)
+	static           void Pop(lua_State* lua, size_t size = 1)
 	{
 		lua_pop(lua, static_cast<int>(size));
 	}
+	static           bool Pop(lua_State* lua, Table& value);
+	template<typename F>
+	static constexpr bool Pop(lua_State* lua, Function<F>& value)
+	{
+		value = Function<F>(lua, luaL_ref(lua, LUA_REGISTRYINDEX));
+
+		return true;
+	}
+	template<typename T>
+	static constexpr bool Pop(lua_State* lua, Optional<T>& value)
+	{
+		value.is_set = Pop(lua, value.value);
+
+		return true;
+	}
+	template<typename ... T>
+	static constexpr bool Pop(lua_State* lua, std::tuple<T ...>& value)
+	{
+		return Pop(lua, value, std::make_index_sequence<sizeof...(T)> {});
+	}
+	template<size_t ... I, typename ... T>
+	static constexpr void Pop(lua_State* lua, std::tuple<T ...>& value, std::index_sequence<I ...>)
+	{
+		return (Pop<typename std::tuple_element<I, std::tuple<T ...>>::type>(lua, std::get<I>(value)) && ...);
+	}
 
 	template<typename T>
-	static bool Peek(lua_State* lua, size_t index, T& value)
+	static           bool Peek(lua_State* lua, size_t index, T& value)
 	{
-		if constexpr (!Is_Optional<T>::Value)
-			if (index > lua_gettop(lua))
-				return false;
+		if (index > lua_gettop(lua))
+			return false;
 
 		if constexpr (Is_Char<T>::Value)
 		{
@@ -1047,25 +1031,6 @@ private:
 				return true;
 			}
 		}
-		else if constexpr (Is_Table<T>::Value)
-			return Table_Peek(lua, index, value);
-		else if constexpr (Is_Tuple<T>::Value)
-			return Tuple_Peek(lua, index, value);
-		else if constexpr (Is_Function<T>::Value)
-		{
-			lua_pushvalue(lua, static_cast<int>(index));
-
-			if (int reference = luaL_ref(lua, LUA_REGISTRYINDEX); reference != LUA_REFNIL)
-			{
-				value = T(lua, reference);
-
-				return true;
-			}
-
-			lua_pop(lua, 1);
-		}
-		else if constexpr (Is_Optional<T>::Value)
-			return Optional_Peek(lua, index, value);
 		else if constexpr (Is_Thread<T>::Value)
 		{
 			// TODO: implement
@@ -1092,9 +1057,45 @@ private:
 
 		return false;
 	}
+	static           bool Peek(lua_State* lua, size_t index, Table& value);
+	template<typename F>
+	static           bool Peek(lua_State* lua, size_t index, Function<F>& value)
+	{
+		lua_pushvalue(lua, static_cast<int>(index));
+
+		int reference;
+
+		if ((reference = luaL_ref(lua, LUA_REGISTRYINDEX)) == LUA_REFNIL)
+		{
+			lua_pop(lua, 1);
+
+			return false;
+		}
+
+		value = Function<F>(lua, reference);
+
+		return true;
+	}
+	template<typename T>
+	static constexpr bool Peek(lua_State* lua, size_t index, Optional<T>& value)
+	{
+		value.is_set = Peek<T>(lua, index, value.value);
+
+		return true;
+	}
+	template<typename ... T>
+	static constexpr bool Peek(lua_State* lua, size_t index, std::tuple<T ...>& value)
+	{
+		return Peek(lua, index, value, std::make_index_sequence<sizeof...(T)> {});
+	}
+	template<typename ... T, size_t ... I>
+	static constexpr bool Peek(lua_State* lua, size_t index, std::tuple<T ...>& value, std::index_sequence<I ...>)
+	{
+		return (Peek<typename std::tuple_element<I, std::tuple<T ...>>::type>(lua, index + I, std::get<I>(value)) && ...);
+	}
 
 	template<typename T>
-	static int  Push(lua_State* lua, const T& value)
+	static           int  Push(lua_State* lua, const T& value)
 	{
 		if constexpr (Is_Char<T>::Value)
 		{
@@ -1125,31 +1126,6 @@ private:
 
 			return 1;
 		}
-		else if constexpr (Is_Table<T>::Value)
-		{
-			Table_Push(lua, value);
-
-			return 1;
-		}
-		else if constexpr (Is_Tuple<T>::Value)
-			return Tuple_Push(lua, value);
-		else if constexpr (Is_Function<T>::Value)
-		{
-			switch (value.context->type)
-			{
-				case FunctionTypes::C:
-					lua_pushlightuserdata(lua, value.context.get());
-					lua_pushcclosure(lua, &T::ExecuteC, 1);
-					return 1;
-
-				case FunctionTypes::Lua:
-					if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.context->reference); value_type != LUA_TFUNCTION)
-						throw Exception("LuaCPP::Push", "lua_rawgeti returned " + std::to_string(value_type));
-					return 1;
-			}
-		}
-		else if constexpr (Is_Optional<T>::Value)
-			return Optional_Push(lua, value);
 		else if constexpr (Is_Thread<T>::Value)
 		{
 			// TODO: implement
@@ -1170,25 +1146,7 @@ private:
 
 		return 0;
 	}
-
-	/*
-	static bool Table_Pop(lua_State* lua, Table& value)
-	{
-		// TODO: implement
-
-		value.context->lua = lua;
-
-		return false;
-	}
-	static bool Table_Peek(lua_State* lua, size_t index, Table& value)
-	{
-		// TODO: implement
-
-		value.context->lua = lua;
-
-		return false;
-	}
-	static int  Table_Push(lua_State* lua, const Table& value)
+	static           int  Push(lua_State* lua, const Table& value)
 	{
 		lua_createtable(lua, static_cast<int>(value.GetCount()), 0);
 
@@ -1237,57 +1195,38 @@ private:
 
 		return 1;
 	}
-	*/
+	template<typename F>
+	static           int  Push(lua_State* lua, const Function<F>& value)
+	{
+		switch (value.GetType())
+		{
+			case FunctionTypes::C:
+				lua_pushlightuserdata(lua, value.context.get());
+				lua_pushcclosure(lua, &Function<F>::ExecuteC, 1);
+				return 1;
 
-	template<typename ... T>
-	static constexpr bool Tuple_Pop(lua_State* lua, std::tuple<T ...>& value)
-	{
-		return Tuple_Pop(lua, value, std::make_index_sequence<sizeof...(T)> {});
-	}
-	template<size_t ... I, typename ... T>
-	static constexpr void Tuple_Pop(lua_State* lua, std::tuple<T ...>& value, std::index_sequence<I ...>)
-	{
-		return (Pop<typename std::tuple_element<I, std::tuple<T ...>>::type>(lua, std::get<I>(value)) && ...);
-	}
-	template<typename ... T>
-	static constexpr bool Tuple_Peek(lua_State* lua, size_t index, std::tuple<T ...>& value)
-	{
-		return Tuple_Peek(lua, index, value, std::make_index_sequence<sizeof...(T)> {});
-	}
-	template<typename ... T, size_t ... I>
-	static constexpr bool Tuple_Peek(lua_State* lua, size_t index, std::tuple<T ...>& value, std::index_sequence<I ...>)
-	{
-		return (Peek<typename std::tuple_element<I, std::tuple<T ...>>::type>(lua, index + I, std::get<I>(value)) && ...);
-	}
-	template<typename ... T>
-	static constexpr int  Tuple_Push(lua_State* lua, const std::tuple<T ...>& value)
-	{
-		return Tuple_Push<T ...>(lua, value, std::make_index_sequence<sizeof...(T)> {});
-	}
-	template<typename ... T, size_t ... I>
-	static constexpr int  Tuple_Push(lua_State* lua, const std::tuple<T ...>& value, std::index_sequence<I ...>)
-	{
-		return (Push<T>(lua, std::get<I>(value)) + ...);
-	}
+			case FunctionTypes::Lua:
+				if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.context->reference); value_type != LUA_TFUNCTION)
+					throw Exception("LuaCPP::Push", "lua_rawgeti returned " + std::to_string(value_type));
+				return 1;
+		}
 
-	template<typename T>
-	static constexpr bool Optional_Pop(lua_State* lua, Optional<T>& value)
-	{
-		value.is_set = Pop<T>(lua, value.value);
-
-		return true;
+		return 1;
 	}
 	template<typename T>
-	static constexpr bool Optional_Peek(lua_State* lua, size_t index, Optional<T>& value)
-	{
-		value.is_set = Peek<T>(lua, index, value.value);
-
-		return true;
-	}
-	template<typename T>
-	static constexpr int  Optional_Push(lua_State* lua, const Optional<T>& value)
+	static constexpr int  Push(lua_State* lua, const Optional<T>& value)
 	{
 		return value ? Push<T>(lua, *value) : 0;
+	}
+	template<typename ... T>
+	static constexpr int  Push(lua_State* lua, const std::tuple<T ...>& value)
+	{
+		return Push<T ...>(lua, value, std::make_index_sequence<sizeof...(T)> {});
+	}
+	template<typename ... T, size_t ... I>
+	static constexpr int  Push(lua_State* lua, const std::tuple<T ...>& value, std::index_sequence<I ...>)
+	{
+		return (Push<T>(lua, std::get<I>(value)) + ...);
 	}
 
 private:
