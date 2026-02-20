@@ -7,8 +7,8 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
 
 project(LuaCPP)
 
-add_subdirectory(lua547)
+add_subdirectory(lua550)
 
 add_library(luacpp INTERFACE)
-target_link_libraries(luacpp INTERFACE lua547)
+target_link_libraries(luacpp INTERFACE lua550)
 target_include_directories(luacpp INTERFACE ${CMAKE_CURRENT_LIST_DIR})

@@ -2,6 +2,14 @@
 
 #include <LuaCPP.hpp>
 
+int do_the_thing(int a, int b, LuaCPP::Optional<LuaCPP::Function<int(int, int)>> callback)
+{
+	if (callback)
+		return callback->Execute(a, b);
+
+	return 0;
+}
+
 int main(int argc, char* argv[])
 {
 	LuaCPP                                                                                 lua;
@@ -16,7 +24,8 @@ int main(int argc, char* argv[])
 	{
 		lua.LoadLibrary(LuaCPP::Libraries::All);
 
-		lua.SetGlobal("do_the_thing", lua_do_the_thing);
+		lua.SetGlobal<do_the_thing>("do_the_thing");
+		lua.SetGlobal("do_the_thing2", lua_do_the_thing);
 
 		lua.RunFile("./demo.lua");
 	}
