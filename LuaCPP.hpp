@@ -74,10 +74,10 @@ private:
 	template<typename T>
 	struct Is_Number
 	{
-		static constexpr bool Value =
-			std::is_enum<T>::value ||
+		static constexpr bool Value = !std::is_same<T, bool>::value &&
+			(std::is_enum<T>::value ||
 			std::is_integral<T>::value ||
-			std::is_floating_point<T>::value;
+			std::is_floating_point<T>::value);
 	};
 	template<typename T>
 	struct Is_Boolean
