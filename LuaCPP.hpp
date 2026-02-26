@@ -820,7 +820,6 @@ public:
 		return true;
 	}
 
-	// @throw std::exception
 	void LoadLibrary(Libraries value)
 	{
 		assert(GetHandle() != nullptr);
@@ -841,11 +840,10 @@ public:
 		}
 	}
 
-	// @throw std::exception
 	// @return 0 on not found
 	// @return -1 on invalid type
 	template<typename T>
-	int  GetGlobal(const std::string_view& name, T& value)
+	int  GetGlobal(const std::string_view& name, T& value) const
 	{
 		assert(GetHandle() != nullptr);
 
@@ -866,8 +864,7 @@ public:
 		return Pop<T>(GetHandle(), value) ? 1 : 0;
 	}
 
-	// @throw std::exception
-	auto GetGlobalType(const std::string_view& name)
+	auto GetGlobalType(const std::string_view& name) const
 	{
 		assert(GetHandle() != nullptr);
 
@@ -879,7 +876,6 @@ public:
 		return static_cast<Types>(type);
 	}
 
-	// @throw std::exception
 	template<auto VALUE>
 	void SetGlobal(const std::string_view& name)
 	{
@@ -893,7 +889,6 @@ public:
 		else
 			return SetGlobal(name, VALUE);
 	}
-	// @throw std::exception
 	template<typename T>
 	void SetGlobal(const std::string_view& name, const T& value)
 	{
@@ -906,7 +901,6 @@ public:
 		lua_setglobal(GetHandle(), name.data());
 	}
 
-	// @throw std::exception
 	void RemoveGlobal(const std::string_view& name)
 	{
 		assert(GetHandle() != nullptr);
