@@ -471,6 +471,7 @@ public:
 			FunctionTypes type;
 			CFunction     function;
 			int           reference;
+			bool          take_ownership;
 
 			Context()
 				: type(FunctionTypes::None)
@@ -484,26 +485,23 @@ public:
 			{
 			}
 
-			Context(lua_State* lua, int reference)
+			Context(lua_State* lua, int reference, bool take_ownership)
 				: lua(lua),
 				type(FunctionTypes::Lua),
-				reference(reference)
+				reference(reference),
+				take_ownership(take_ownership)
 			{
 			}
 
 			~Context()
 			{
 				if (type == FunctionTypes::Lua)
-					luaL_unref(lua, LUA_REGISTRYINDEX, reference);
+					if (take_ownership)
+						luaL_unref(lua, LUA_REGISTRYINDEX, reference);
 			}
 		};
 
 		std::shared_ptr<Context> context;
-
-		Function(lua_State* lua, int reference)
-			: context(new Context(lua, reference))
-		{
-		}
 
 	public:
 		Function()
@@ -523,6 +521,11 @@ public:
 		}
 		Function(const Function& function)
 			: context(function.context)
+		{
+		}
+
+		Function(lua_State* lua, int reference, bool take_ownership)
+			: context(new Context(lua, reference, take_ownership))
 		{
 		}
 
@@ -1082,7 +1085,7 @@ private:
 			return false;
 		}
 
-		value = Function<F>(lua, reference);
+		value = Function<F>(lua, reference, true);
 
 		return true;
 	}
@@ -1213,15 +1216,19 @@ private:
 	{
 		switch (value.GetType())
 		{
+			case FunctionTypes::None:
+				lua_pushnil(lua);
+				break;
+
 			case FunctionTypes::C:
 				lua_pushlightuserdata(lua, value.context.get());
 				lua_pushcclosure(lua, &Function<F>::ExecuteC, 1);
-				return 1;
+				break;
 
 			case FunctionTypes::Lua:
 				if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.GetReference()); value_type != LUA_TFUNCTION)
 					throw Exception("LuaCPP::Push", "lua_rawgeti returned " + std::to_string(value_type));
-				return 1;
+				break;
 		}
 
 		return 1;
