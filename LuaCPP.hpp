@@ -1007,7 +1007,10 @@ private:
 		}
 		else if constexpr (Is_Number<T>::Value)
 		{
-			value = static_cast<T>(lua_tonumber(lua, static_cast<int>(index)));
+			if constexpr (std::is_floating_point<T>::value)
+				value = static_cast<T>(lua_tonumber(lua, static_cast<int>(index)));
+			else
+				value = static_cast<T>(lua_tointeger(lua, static_cast<int>(index)));
 
 			return true;
 		}
@@ -1112,7 +1115,10 @@ private:
 		}
 		else if constexpr (Is_Number<T>::Value)
 		{
-			lua_pushnumber(lua, static_cast<lua_Number>(value));
+			if constexpr (std::is_floating_point<T>::value)
+				lua_pushnumber(lua, static_cast<lua_Number>(value));
+			else
+				lua_pushinteger(lua, static_cast<lua_Integer>(value));
 
 			return 1;
 		}
