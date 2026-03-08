@@ -799,6 +799,11 @@ public:
 		state.lua = nullptr;
 	}
 
+	LuaCPP(lua_Alloc alloc, void* param)
+		: lua(lua_newstate(alloc, param, luaL_makeseed(nullptr)))
+	{
+	}
+
 	virtual ~LuaCPP()
 	{
 		Release();
