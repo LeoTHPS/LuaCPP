@@ -1147,11 +1147,18 @@ private:
 		else if constexpr (Is_String<T>::Value)
 		{
 			if constexpr (Is_CString<T>::Value)
+			{
+				if (value == nullptr)
+					lua_pushnil(lua);
+				else
+				{
 #ifdef LUACPP_IS_LUA54
-				lua_pushstring(lua, value);
+					lua_pushstring(lua, value);
 #elifdef LUACPP_IS_LUA55
-				lua_pushexternalstring(lua, value, strlen(value), nullptr, nullptr);
+					lua_pushexternalstring(lua, value, strlen(value), nullptr, nullptr);
 #endif
+				}
+			}
 			else if constexpr (Is_StringView<T>::Value)
 #ifdef LUACPP_IS_LUA54
 				lua_pushlstring(lua, value.data(), value.length());
