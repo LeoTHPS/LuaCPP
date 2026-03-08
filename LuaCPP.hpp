@@ -5,6 +5,7 @@
 #include <string>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <exception>
 #include <filesystem>
@@ -12,6 +13,14 @@
 #include <type_traits>
 
 #include <lua.hpp>
+
+#if (LUA_VERSION_MAJOR_N == 5) && (LUA_VERSION_MINOR_N == 4)
+	#define LUACPP_IS_LUA54 1
+#elif (LUA_VERSION_MAJOR_N == 5) && (LUA_VERSION_MINOR_N == 5)
+	#define LUACPP_IS_LUA55 1
+#else
+	#error Lua version not supported
+#endif
 
 class LuaCPP
 {
@@ -988,7 +997,7 @@ private:
 		return Pop(lua, value, std::make_index_sequence<sizeof...(T)> {});
 	}
 	template<size_t ... I, typename ... T>
-	static constexpr void Pop(lua_State* lua, std::tuple<T ...>& value, std::index_sequence<I ...>)
+	static constexpr bool Pop(lua_State* lua, std::tuple<T ...>& value, std::index_sequence<I ...>)
 	{
 		return (Pop<typename std::tuple_element<I, std::tuple<T ...>>::type>(lua, std::get<I>(value)) && ...);
 	}
@@ -1134,9 +1143,17 @@ private:
 		else if constexpr (Is_String<T>::Value)
 		{
 			if constexpr (Is_CString<T>::Value)
+#ifdef LUACPP_IS_LUA54
 				lua_pushstring(lua, value);
+#elifdef LUACPP_IS_LUA55
+				lua_pushexternalstring(lua, value, strlen(value), nullptr, nullptr);
+#endif
 			else if constexpr (Is_StringView<T>::Value)
+#ifdef LUACPP_IS_LUA54
 				lua_pushlstring(lua, value.data(), value.length());
+#elifdef LUACPP_IS_LUA55
+				lua_pushexternalstring(lua, value.data(), value.length(), nullptr, nullptr);
+#endif
 			else
 				lua_pushlstring(lua, value.c_str(), value.length());
 
