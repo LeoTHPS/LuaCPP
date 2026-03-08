@@ -804,51 +804,46 @@ public:
 		Release();
 	}
 
-	constexpr auto GetHandle() const
-	{
-		return lua;
-	}
-
 	// @throw std::exception
 	void Run(const std::string_view& lua)
 	{
-		assert(GetHandle() != nullptr);
+		assert(this->lua != nullptr);
 
-		if (luaL_dostring(GetHandle(), lua.data()) != LUA_OK)
-			throw Exception("luaL_dostring", GetHandle());
+		if (luaL_dostring(this->lua, lua.data()) != LUA_OK)
+			throw Exception("luaL_dostring", this->lua);
 	}
 	// @throw std::exception
 	// @return false if not found
 	bool RunFile(const std::string_view& path)
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
 		if (!FileExists(path))
 			return false;
 
-		if (luaL_dofile(GetHandle(), path.data()) != LUA_OK)
-			throw Exception("luaL_dofile", GetHandle());
+		if (luaL_dofile(lua, path.data()) != LUA_OK)
+			throw Exception("luaL_dofile", lua);
 
 		return true;
 	}
 
 	void LoadLibrary(Libraries value)
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
 		switch (value)
 		{
-			case Libraries::All:       luaL_openlibs(GetHandle());                                         break;
-			case Libraries::Base:      luaL_requiref(GetHandle(), "_G",            &luaopen_base, 1);      break;
-			case Libraries::CoRoutine: luaL_requiref(GetHandle(), LUA_COLIBNAME,   &luaopen_coroutine, 1); break;
-			case Libraries::Table:     luaL_requiref(GetHandle(), LUA_TABLIBNAME,  &luaopen_table, 1);     break;
-			case Libraries::IO:        luaL_requiref(GetHandle(), LUA_IOLIBNAME,   &luaopen_io, 1);        break;
-			case Libraries::OS:        luaL_requiref(GetHandle(), LUA_OSLIBNAME,   &luaopen_os, 1);        break;
-			case Libraries::String:    luaL_requiref(GetHandle(), LUA_STRLIBNAME,  &luaopen_string, 1);    break;
-			case Libraries::UTF8:      luaL_requiref(GetHandle(), LUA_UTF8LIBNAME, &luaopen_utf8, 1);      break;
-			case Libraries::Math:      luaL_requiref(GetHandle(), LUA_MATHLIBNAME, &luaopen_math, 1);      break;
-			case Libraries::Debug:     luaL_requiref(GetHandle(), LUA_DBLIBNAME,   &luaopen_debug, 1);     break;
-			case Libraries::Package:   luaL_requiref(GetHandle(), LUA_LOADLIBNAME, &luaopen_package, 1);   break;
+			case Libraries::All:       luaL_openlibs(lua);                                         break;
+			case Libraries::Base:      luaL_requiref(lua, "_G",            &luaopen_base, 1);      break;
+			case Libraries::CoRoutine: luaL_requiref(lua, LUA_COLIBNAME,   &luaopen_coroutine, 1); break;
+			case Libraries::Table:     luaL_requiref(lua, LUA_TABLIBNAME,  &luaopen_table, 1);     break;
+			case Libraries::IO:        luaL_requiref(lua, LUA_IOLIBNAME,   &luaopen_io, 1);        break;
+			case Libraries::OS:        luaL_requiref(lua, LUA_OSLIBNAME,   &luaopen_os, 1);        break;
+			case Libraries::String:    luaL_requiref(lua, LUA_STRLIBNAME,  &luaopen_string, 1);    break;
+			case Libraries::UTF8:      luaL_requiref(lua, LUA_UTF8LIBNAME, &luaopen_utf8, 1);      break;
+			case Libraries::Math:      luaL_requiref(lua, LUA_MATHLIBNAME, &luaopen_math, 1);      break;
+			case Libraries::Debug:     luaL_requiref(lua, LUA_DBLIBNAME,   &luaopen_debug, 1);     break;
+			case Libraries::Package:   luaL_requiref(lua, LUA_LOADLIBNAME, &luaopen_package, 1);   break;
 		}
 	}
 
@@ -857,33 +852,33 @@ public:
 	template<typename T>
 	int  GetGlobal(const std::string_view& name, T& value) const
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
 		static_assert(Get_Type<T>::Value != Types::None);
 
-		auto type = lua_getglobal(GetHandle(), name.data());
+		auto type = lua_getglobal(lua, name.data());
 
 		if (type == LUA_TNONE)
 			return 0;
 
 		if (type != static_cast<int>(Get_Type<T>::Value))
 		{
-			Pop(GetHandle());
+			Pop(lua);
 
 			return -1;
 		}
 
-		return Pop<T>(GetHandle(), value) ? 1 : 0;
+		return Pop<T>(lua, value) ? 1 : 0;
 	}
 
 	auto GetGlobalType(const std::string_view& name) const
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
-		auto type = lua_getglobal(GetHandle(), name.data());
+		auto type = lua_getglobal(lua, name.data());
 
 		if (type != LUA_TNONE)
-			Pop(GetHandle());
+			Pop(lua);
 
 		return static_cast<Types>(type);
 	}
@@ -891,12 +886,12 @@ public:
 	template<auto VALUE>
 	void SetGlobal(const std::string_view& name)
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
 		if constexpr (Is_CFunction<decltype(VALUE)>::Value)
 		{
-			lua_pushcclosure(GetHandle(), &CFunction<VALUE>::Execute, 0);
-			lua_setglobal(GetHandle(), name.data());
+			lua_pushcclosure(lua, &CFunction<VALUE>::Execute, 0);
+			lua_setglobal(lua, name.data());
 		}
 		else
 			return SetGlobal(name, VALUE);
@@ -904,44 +899,48 @@ public:
 	template<typename T>
 	void SetGlobal(const std::string_view& name, const T& value)
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
 		static_assert(!Is_CFunction<T>::Value);
 		static_assert(Get_Type<T>::Value != Types::None);
 
-		Push<T>(GetHandle(), value);
-		lua_setglobal(GetHandle(), name.data());
+		Push<T>(lua, value);
+		lua_setglobal(lua, name.data());
 	}
 
 	void RemoveGlobal(const std::string_view& name)
 	{
-		assert(GetHandle() != nullptr);
+		assert(lua != nullptr);
 
-		lua_pushnil(GetHandle());
-		lua_setglobal(GetHandle(), name.data());
+		lua_pushnil(lua);
+		lua_setglobal(lua, name.data());
 	}
 
 	void Release()
 	{
-		if (auto lua = GetHandle())
+		if (lua)
 		{
 			lua_close(lua);
-
-			this->lua = nullptr;
+			lua = nullptr;
 		}
 	}
 
 	constexpr operator bool() const
 	{
-		return GetHandle() != nullptr;
+		return lua != nullptr;
+	}
+
+	constexpr operator lua_State*() const
+	{
+		return lua;
 	}
 
 	auto& operator = (LuaCPP&& state)
 	{
-		if (auto lua = GetHandle())
+		if (lua)
 			lua_close(lua);
 
-		lua = state.GetHandle();
+		lua = state.lua;
 		state.lua = nullptr;
 
 		return *this;
@@ -949,7 +948,7 @@ public:
 
 	constexpr bool operator == (const LuaCPP& state) const
 	{
-		return GetHandle() == state.GetHandle();
+		return lua == state.lua;
 	}
 	constexpr bool operator != (const LuaCPP& state) const
 	{
