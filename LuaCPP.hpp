@@ -1040,22 +1040,27 @@ private:
 		{
 			if constexpr (Is_CString<T>::Value)
 			{
-				if (auto string = lua_tostring(lua, static_cast<int>(index)))
-				{
-					value = string;
-
-					return true;
-				}
-			}
-			else if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
-			{
-				if constexpr (Is_StringView<T>::Value)
-					value = std::string_view(string, length);
+				if (lua_isnil(lua, static_cast<int>(index)))
+					value = nullptr;
 				else
-					value = std::string(string, length);
-
-				return true;
+					value = lua_tostring(lua, static_cast<int>(index));
 			}
+			else if constexpr (Is_StringView<T>::Value)
+			{
+				if (lua_isnil(lua, static_cast<int>(index)))
+					value = std::string_view();
+				else if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
+					value = std::string_view(string, length);
+			}
+			else
+			{
+				if (lua_isnil(lua, static_cast<int>(index)))
+					value = std::string();
+				else if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
+					value = std::string(string, length);
+			}
+
+			return true;
 		}
 		else if constexpr (Is_Thread<T>::Value)
 		{
@@ -1160,11 +1165,16 @@ private:
 				}
 			}
 			else if constexpr (Is_StringView<T>::Value)
+			{
+				if (value.data() == nullptr)
+					lua_pushnil(lua);
+				else
 #ifdef LUACPP_IS_LUA54
-				lua_pushlstring(lua, value.data(), value.length());
+					lua_pushlstring(lua, value.data(), value.length());
 #elifdef LUACPP_IS_LUA55
-				lua_pushexternalstring(lua, value.data(), value.length(), nullptr, nullptr);
+					lua_pushexternalstring(lua, value.data(), value.length(), nullptr, nullptr);
 #endif
+			}
 			else
 				lua_pushlstring(lua, value.c_str(), value.length());
 
