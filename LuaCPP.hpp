@@ -1157,9 +1157,9 @@ private:
 					lua_pushnil(lua);
 				else
 				{
-#ifdef LUACPP_IS_LUA54
+#if defined(LUACPP_IS_LUA54)
 					lua_pushstring(lua, value);
-#elifdef LUACPP_IS_LUA55
+#elif defined(LUACPP_IS_LUA55)
 					lua_pushexternalstring(lua, value, strlen(value), nullptr, nullptr);
 #endif
 				}
@@ -1169,9 +1169,9 @@ private:
 				if (value.data() == nullptr)
 					lua_pushnil(lua);
 				else
-#ifdef LUACPP_IS_LUA54
+#if defined(LUACPP_IS_LUA54)
 					lua_pushlstring(lua, value.data(), value.length());
-#elifdef LUACPP_IS_LUA55
+#elif defined(LUACPP_IS_LUA55)
 					lua_pushexternalstring(lua, value.data(), value.length(), nullptr, nullptr);
 #endif
 			}
