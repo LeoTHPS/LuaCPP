@@ -1040,27 +1040,24 @@ private:
 		{
 			if constexpr (Is_CString<T>::Value)
 			{
-				if (lua_isnil(lua, static_cast<int>(index)))
-					value = nullptr;
-				else
-					value = lua_tostring(lua, static_cast<int>(index));
+				value = lua_tostring(lua, static_cast<int>(index));
+
+				return true;
 			}
 			else if constexpr (Is_StringView<T>::Value)
 			{
-				if (lua_isnil(lua, static_cast<int>(index)))
-					value = std::string_view();
-				else if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
+				if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
 					value = std::string_view(string, length);
+
+				return true;
 			}
 			else
 			{
-				if (lua_isnil(lua, static_cast<int>(index)))
-					value = std::string();
-				else if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
+				if (size_t length; auto string = lua_tolstring(lua, static_cast<int>(index), &length))
 					value = std::string(string, length);
-			}
 
-			return true;
+				return true;
+			}
 		}
 		else if constexpr (Is_Thread<T>::Value)
 		{
