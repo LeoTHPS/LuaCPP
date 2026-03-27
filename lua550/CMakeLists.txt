@@ -1,3 +1,5 @@
+project(lua550)
+
 include(FetchContent)
 
 set(LUA550_URL      "https://www.lua.org/ftp/lua-5.5.0.tar.gz")
