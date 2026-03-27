@@ -2,36 +2,31 @@
 
 #include <LuaCPP.hpp>
 
-int do_the_thing(int a, int b, LuaCPP::Optional<LuaCPP::Function<int(int, int)>> callback)
+int do_the_thing(int a, int b)
 {
-	if (callback)
-		return callback->Execute(a, b);
-
-	return 0;
+	return a + b;
 }
+
+#define lua_set_global(lua, value)          lua_set_global_ex(lua, #value, value)
+#define lua_set_global_ex(lua, name, value) lua.SetGlobal<value>(name)
 
 int main(int argc, char* argv[])
 {
-	LuaCPP                                                                                 lua;
-	LuaCPP::Function<int(int a, int b, LuaCPP::Optional<LuaCPP::Function<int(int, int)>>)> lua_do_the_thing([&lua](int a, int b, LuaCPP::Optional<LuaCPP::Function<int(int, int)>> callback) {
-		if (callback)
-			return callback->Execute(a, b);
-
-		return 0;
-	});
-
-	try
+	if (auto lua = LuaCPP())
 	{
 		lua.LoadLibrary(LuaCPP::Libraries::All);
 
-		lua.SetGlobal<do_the_thing>("do_the_thing");
-		lua.SetGlobal("do_the_thing2", lua_do_the_thing);
+		lua_set_global(lua, do_the_thing);
 
-		lua.RunFile("./demo.lua");
-	}
-	catch(const std::exception& exception)
-	{
-		std::cerr << exception.what() << std::endl;
+		try
+		{
+			if (!lua.RunFile("./demo.lua"))
+				std::cerr << "demo.lua not found" << std::endl;
+		}
+		catch(const std::exception& exception)
+		{
+			std::cerr << exception.what() << std::endl;
+		}
 	}
 
 	return 0;
