@@ -60,7 +60,6 @@ public:
 		None, C, Lua
 	};
 
-	class Table;
 	class Thread;
 	template<typename T>
 	class UserData;
@@ -111,11 +110,11 @@ private:
 	{
 		static constexpr bool Value = std::is_same<T, std::string_view>::value;
 	};
-	template<typename T>
-	struct Is_Table
-	{
-		static constexpr bool Value = std::is_same<T, Table>::value;
-	};
+	// template<typename T>
+	// struct Is_Table
+	// {
+	// 	static constexpr bool Value = std::is_same<T, Table>::value;
+	// };
 	template<typename T>
 	struct Is_Tuple
 	{
@@ -185,72 +184,11 @@ private:
 			Is_Number<T>::Value                        ? Types::Number :
 			Is_Boolean<T>::Value                       ? Types::Boolean :
 			(Is_String<T>::Value || Is_Char<T>::Value) ? Types::String :
-			Is_Table<T>::Value                         ? Types::Table :
+			// Is_Table<T>::Value                         ? Types::Table :
 			Is_Function<T>::Value                      ? Types::Function :
 			Is_Thread<T>::Value                        ? Types::Thread :
 			Is_UserData<T>::Value                      ? Types::UserData :
 			Is_LightUserData<T>::Value                 ? Types::LightUserData : Types::None;
-	};
-
-	struct Data
-	{
-		Types         type;
-		std::string   string;
-		FunctionTypes function_type;
-
-		union
-		{
-			Table*        table;
-			lua_Number    number;
-			int           boolean;
-			lua_Integer   integer;
-			lua_CFunction function_c;
-			int           function_lua;
-			void*         light_user_data;
-		};
-
-		template<typename T>
-		explicit Data(const T& value)
-			: type(Get_Type<T>::Value),
-			function_type(FunctionTypes::None)
-		{
-			static constexpr Types TYPE = Get_Type<T>::Value;
-
-			if constexpr (TYPE == Types::Boolean)
-				boolean = value;
-			else if constexpr (TYPE == Types::LightUserData)
-				light_user_data = value;
-			else if constexpr (TYPE == Types::Number)
-				number = value;
-			else if constexpr (TYPE == Types::String)
-				string = value;
-			else if constexpr (TYPE == Types::UserData)
-				; // TODO: implement
-			else if constexpr (TYPE == Types::Thread)
-				; // TODO: implement
-		}
-		explicit Data(const Table& value)
-			: type(Types::Table),
-			function_type(FunctionTypes::None),
-			table(const_cast<Table*>(&value))
-		{
-		}
-		template<typename F>
-		explicit Data(const Function<F>& value)
-			: type(Types::Function),
-			function_type(value.GetType())
-		{
-			switch (function_type)
-			{
-				case FunctionTypes::C:
-					function_c = value.GetCFunction();
-					break;
-
-				case FunctionTypes::Lua:
-					function_lua = value.GetReference();
-					break;
-			}
-		}
 	};
 
 	class Exception
@@ -279,137 +217,6 @@ private:
 	};
 
 public:
-	class Table
-	{
-		friend LuaCPP;
-
-		struct Field
-		{
-			Data key;
-			Data value;
-
-			template<typename T_KEY, typename T_VALUE>
-			Field(const T_KEY& key, const T_VALUE& value)
-				: key(key),
-				value(value)
-			{
-			}
-		};
-
-		struct Context
-		{
-			lua_State*       lua;
-			std::list<Field> fields;
-		};
-
-		std::shared_ptr<Context> context;
-
-	public:
-		Table()
-			: context(new Context())
-		{
-		}
-
-		Table(Table&& table)
-			: context(std::move(table.context))
-		{
-		}
-		Table(const Table& table)
-			: context(table.context)
-		{
-		}
-
-		virtual ~Table()
-		{
-		}
-
-		auto GetCount() const
-		{
-			return context ? context->fields.size() : 0;
-		}
-
-		// @throw std::exception
-		// @return 0 on not found
-		// @return -1 on invalid type
-		template<typename T>
-		int  At(size_t index, T& value)
-		{
-			assert(context->lua != nullptr);
-
-			// TODO: implement
-
-			return 0;
-		}
-
-		// @throw std::exception
-		// @return 0 on not found
-		// @return -1 on invalid type
-		template<typename T_KEY, typename T_VALUE>
-		int  Get(const T_KEY& key, T_VALUE& value)
-		{
-			assert(context->lua != nullptr);
-
-			// TODO: implement
-
-			return 0;
-		}
-
-		// @throw std::exception
-		template<typename T>
-		auto GetType(const T& key) const
-		{
-			assert(context->lua != nullptr);
-
-			// TODO: implement
-
-			return Types::None;
-		}
-
-		// @throw std::exception
-		auto GetTypeAt(size_t index) const
-		{
-			assert(context->lua != nullptr);
-
-			for (auto& field : context->fields)
-				if (!index--)
-					return field.value.type;
-
-			return Types::None;
-		}
-
-		// @throw std::exception
-		template<typename T_KEY, typename T_VALUE>
-		void Set(const T_KEY& key, const T_VALUE& value)
-		{
-			assert(context->lua != nullptr);
-
-			// TODO: implement
-		}
-
-		void Release()
-		{
-			context.reset();
-		}
-
-		operator bool() const
-		{
-			return context.get() != nullptr;
-		}
-
-		auto& operator = (Table&& table)
-		{
-			context = std::move(table.context);
-
-			return *this;
-		}
-		auto& operator = (const Table& table)
-		{
-			context = table.context;
-
-			return *this;
-		}
-	};
-
 	template<typename T, typename ... TArgs>
 	class Function<T(TArgs ...)>
 	{
@@ -419,58 +226,48 @@ public:
 
 		template<typename F>
 		class Detour;
-		template<typename ... T_ARGS>
-		class Detour<void(T_ARGS ...)>
-		{
-		public:
-			static constexpr int  C(lua_State* lua, const CFunction& function)
-			{
-				return C(lua, function, std::make_index_sequence<sizeof...(T_ARGS)> {});
-			}
-			template<size_t ... I>
-			static constexpr int  C(lua_State* lua, const CFunction& function, std::index_sequence<I ...>)
-			{
-				function(Peek<I>(lua) ...);
-
-				return 0;
-			}
-
-			static constexpr void Lua(lua_State* lua, T_ARGS ... args)
-			{
-				lua_call(lua, (Push<T_ARGS>(lua, args) + ...), 0);
-			}
-			static constexpr void LuaProtected(lua_State* lua, T_ARGS ... args)
-			{
-				if (lua_pcall(lua, (Push<T_ARGS>(lua, args) + ...), 0, 0) != LUA_OK)
-					throw Exception("lua_pcall", lua);
-			}
-		};
 		template<typename T_RETURN, typename ... T_ARGS>
 		class Detour<T_RETURN(T_ARGS ...)>
 		{
 		public:
-			static constexpr int      C(lua_State* lua, const CFunction& function)
+			static int      C(lua_State* lua, const CFunction& function)
 			{
 				return C(lua, function, std::make_index_sequence<sizeof...(T_ARGS)> {});
 			}
 			template<size_t ... I>
-			static constexpr int      C(lua_State* lua, const CFunction& function, std::index_sequence<I ...>)
+			static int      C(lua_State* lua, const CFunction& function, std::index_sequence<I ...>)
 			{
-				return Push<T_RETURN>(lua, function(Peek<I>(lua) ...));
+				if constexpr (std::is_same<T, void>::value)
+					return function(Peek<I>(lua) ...), 0;
+				else
+					return Push<T_RETURN>(lua, function(Peek<I>(lua) ...));
 			}
 
-			static constexpr T_RETURN Lua(lua_State* lua, T_ARGS ... args)
+			static T_RETURN Lua(lua_State* lua, T_ARGS ... args)
 			{
-				lua_call(lua, (Push<T_ARGS>(lua, args) + ...), LUA_MULTRET);
+				if constexpr (std::is_same<T, void>::value)
+					lua_call(lua, (Push<T_ARGS>(lua, args) + ...), 0);
+				else
+				{
+					lua_call(lua, (Push<T_ARGS>(lua, args) + ...), LUA_MULTRET);
 
-				return Pop<-1, T_RETURN>(lua);
+					return Pop<-1, T_RETURN>(lua);
+				}
 			}
-			static constexpr T_RETURN LuaProtected(lua_State* lua, T_ARGS ... args)
+			static T_RETURN LuaProtected(lua_State* lua, T_ARGS ... args)
 			{
-				if (lua_pcall(lua, (Push<T_ARGS>(lua, args) + ...), LUA_MULTRET, 0) != LUA_OK)
-					throw Exception(lua, "lua_pcall");
+				if constexpr (std::is_same<T, void>::value)
+				{
+					if (lua_pcall(lua, (Push<T_ARGS>(lua, args) + ...), 0, 0) != LUA_OK)
+						throw Exception("lua_pcall", lua);
+				}
+				else
+				{
+					if (lua_pcall(lua, (Push<T_ARGS>(lua, args) + ...), LUA_MULTRET, 0) != LUA_OK)
+						throw Exception(lua, "lua_pcall");
 
-				return Pop<T_RETURN>(lua);
+					return Pop<-1, T_RETURN>(lua);
+				}
 			}
 		};
 
@@ -746,12 +543,12 @@ private:
 			Detour() = delete;
 
 		public:
-			static constexpr int Execute(lua_State* lua)
+			static int Execute(lua_State* lua)
 			{
 				return Execute(lua, std::make_index_sequence<sizeof...(TArgs)> {});
 			}
 			template<size_t ... I>
-			static constexpr int Execute(lua_State* lua, std::index_sequence<I ...>)
+			static int Execute(lua_State* lua, std::index_sequence<I ...>)
 			{
 				if constexpr (std::is_same<T, void>::value)
 					return F(Peek<I>(lua) ...), 0;
@@ -778,29 +575,40 @@ private:
 		CFunction() = delete;
 
 	public:
-		static constexpr int Execute(lua_State* lua)
+		static int Execute(lua_State* lua)
 		{
 			return Detour<decltype(F)>::Execute(lua);
 		}
 	};
 
 	lua_State* lua;
+	bool       lua_is_owned;
 
 	LuaCPP(const LuaCPP&) = delete;
 
 public:
 	LuaCPP()
-		: lua(luaL_newstate())
+		: lua(luaL_newstate()),
+		lua_is_owned(true)
 	{
 	}
 	LuaCPP(LuaCPP&& state)
-		: lua(state.lua)
+		: lua(state.lua),
+		lua_is_owned(state.lua_is_owned)
 	{
-		state.lua = nullptr;
+		state.lua          = nullptr;
+		state.lua_is_owned = false;
 	}
 
 	LuaCPP(lua_Alloc alloc, void* param)
-		: lua(lua_newstate(alloc, param, luaL_makeseed(nullptr)))
+		: lua(lua_newstate(alloc, param, luaL_makeseed(nullptr))),
+		lua_is_owned(true)
+	{
+	}
+
+	LuaCPP(lua_State* state, bool take_ownership)
+		: lua(state),
+		lua_is_owned(take_ownership)
 	{
 	}
 
@@ -810,7 +618,7 @@ public:
 	}
 
 	// @throw std::exception
-	void Run(const std::string_view& lua)
+	void Run(std::string_view lua)
 	{
 		assert(this->lua != nullptr);
 
@@ -819,7 +627,7 @@ public:
 	}
 	// @throw std::exception
 	// @return false if not found
-	bool RunFile(const std::string_view& path)
+	bool RunFile(std::string_view path)
 	{
 		assert(lua != nullptr);
 
@@ -855,7 +663,7 @@ public:
 	// @return 0 on not found
 	// @return -1 on invalid type
 	template<typename T>
-	int  GetGlobal(const std::string_view& name, T& value) const
+	int  GetGlobal(std::string_view name, T& value) const
 	{
 		assert(lua != nullptr);
 
@@ -876,7 +684,7 @@ public:
 		return Pop<T>(lua, value) ? 1 : 0;
 	}
 
-	auto GetGlobalType(const std::string_view& name) const
+	auto GetGlobalType(std::string_view name) const
 	{
 		assert(lua != nullptr);
 
@@ -889,7 +697,7 @@ public:
 	}
 
 	template<auto VALUE>
-	void SetGlobal(const std::string_view& name)
+	void SetGlobal(std::string_view name)
 	{
 		assert(lua != nullptr);
 
@@ -902,7 +710,7 @@ public:
 			return SetGlobal(name, VALUE);
 	}
 	template<typename T>
-	void SetGlobal(const std::string_view& name, const T& value)
+	void SetGlobal(std::string_view name, const T& value)
 	{
 		assert(lua != nullptr);
 
@@ -913,7 +721,7 @@ public:
 		lua_setglobal(lua, name.data());
 	}
 
-	void RemoveGlobal(const std::string_view& name)
+	void RemoveGlobal(std::string_view name)
 	{
 		assert(lua != nullptr);
 
@@ -925,8 +733,11 @@ public:
 	{
 		if (lua)
 		{
-			lua_close(lua);
-			lua = nullptr;
+			if (lua_is_owned)
+				lua_close(lua);
+
+			lua          = nullptr;
+			lua_is_owned = false;
 		}
 	}
 
@@ -942,11 +753,14 @@ public:
 
 	auto& operator = (LuaCPP&& state)
 	{
-		if (lua)
+		if (lua && lua_is_owned)
 			lua_close(lua);
 
 		lua = state.lua;
 		state.lua = nullptr;
+
+		lua_is_owned = state.lua_is_owned;
+		state.lua_is_owned = false;
 
 		return *this;
 	}
@@ -980,7 +794,6 @@ private:
 	{
 		lua_pop(lua, static_cast<int>(size));
 	}
-	static           bool Pop(lua_State* lua, Table& value);
 	template<typename F>
 	static constexpr bool Pop(lua_State* lua, Function<F>& value)
 	{
@@ -1085,7 +898,6 @@ private:
 
 		return false;
 	}
-	static           bool Peek(lua_State* lua, size_t index, Table& value);
 	template<typename F>
 	static           bool Peek(lua_State* lua, size_t index, Function<F>& value)
 	{
@@ -1107,7 +919,7 @@ private:
 	template<typename T>
 	static constexpr bool Peek(lua_State* lua, size_t index, Optional<T>& value)
 	{
-		value.is_set = Peek<T>(lua, index, value.value);
+		value.is_set = Peek(lua, index, value.value);
 
 		return true;
 	}
@@ -1197,55 +1009,6 @@ private:
 
 		return 0;
 	}
-	static           int  Push(lua_State* lua, const Table& value)
-	{
-		lua_createtable(lua, static_cast<int>(value.GetCount()), 0);
-
-		auto stack_top = lua_gettop(lua);
-
-		for (auto& field : value.context->fields)
-		{
-			assert(field.key.type != Types::None);
-			assert(field.value.type != Types::None);
-
-			auto stack_top_field = lua_gettop(lua);
-
-			switch (field.key.type)
-			{
-				case Types::Null:          lua_pushnil(lua); break;
-				case Types::Boolean:       lua_pushboolean(lua, field.key.boolean); break;
-				case Types::LightUserData: lua_pushlightuserdata(lua, field.key.light_user_data); break;
-				case Types::Number:        lua_pushnumber(lua, field.key.number); break;
-				case Types::String:        lua_pushlstring(lua, field.key.string.c_str(), field.key.string.length()); break;
-				case Types::Table:         Push<Table>(lua, *field.key.table); break;
-				case Types::Function:      lua_pushcfunction(lua, field.key.function_c); break;
-				case Types::UserData:      break; // TODO: implement
-				case Types::Thread:        break; // TODO: implement
-			}
-
-			switch (field.value.type)
-			{
-				case Types::Null:          lua_pushnil(lua); break;
-				case Types::Boolean:       lua_pushboolean(lua, field.value.boolean); break;
-				case Types::LightUserData: lua_pushlightuserdata(lua, field.value.light_user_data); break;
-				case Types::Number:        lua_pushnumber(lua, field.value.number); break;
-				case Types::String:        lua_pushlstring(lua, field.value.string.c_str(), field.value.string.length()); break;
-				case Types::Table:         Push<Table>(lua, *field.value.table); break;
-				case Types::Function:      lua_pushcfunction(lua, field.value.function_c); break;
-				case Types::UserData:      break; // TODO: implement
-				case Types::Thread:        break; // TODO: implement
-			}
-
-			auto stack_top_field_size = lua_gettop(lua) - stack_top_field;
-
-			if (stack_top_field_size == 1)
-				lua_pop(lua, 1);
-			else if (stack_top_field_size == 2)
-				lua_settable(lua, stack_top);
-		}
-
-		return 1;
-	}
 	template<typename F>
 	static           int  Push(lua_State* lua, const Function<F>& value)
 	{
@@ -1271,7 +1034,7 @@ private:
 	template<typename T>
 	static constexpr int  Push(lua_State* lua, const Optional<T>& value)
 	{
-		return value ? Push<T>(lua, *value) : 0;
+		return value ? Push<T>(lua, value.value) : 0;
 	}
 	template<typename ... T>
 	static constexpr int  Push(lua_State* lua, const std::tuple<T ...>& value)
@@ -1286,7 +1049,7 @@ private:
 
 private:
 	// @throw std::exception
-	static bool FileExists(const std::string_view& path)
+	static bool FileExists(std::string_view path)
 	{
 		if (!std::filesystem::exists(path))
 			return false;
