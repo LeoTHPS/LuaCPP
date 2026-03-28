@@ -230,12 +230,12 @@ public:
 		class Detour<T_RETURN(T_ARGS ...)>
 		{
 		public:
-			static int      C(lua_State* lua, const CFunction& function)
+			static constexpr int      C(lua_State* lua, const CFunction& function)
 			{
 				return C(lua, function, std::make_index_sequence<sizeof...(T_ARGS)> {});
 			}
 			template<size_t ... I>
-			static int      C(lua_State* lua, const CFunction& function, std::index_sequence<I ...>)
+			static constexpr int      C(lua_State* lua, const CFunction& function, std::index_sequence<I ...>)
 			{
 				if constexpr (std::is_same<T, void>::value)
 					return function(Peek<I>(lua) ...), 0;
@@ -243,7 +243,7 @@ public:
 					return Push<T_RETURN>(lua, function(Peek<I>(lua) ...));
 			}
 
-			static T_RETURN Lua(lua_State* lua, T_ARGS ... args)
+			static constexpr T_RETURN Lua(lua_State* lua, T_ARGS ... args)
 			{
 				if constexpr (std::is_same<T, void>::value)
 					lua_call(lua, (Push<T_ARGS>(lua, args) + ...), 0);
@@ -254,7 +254,8 @@ public:
 					return Pop<-1, T_RETURN>(lua);
 				}
 			}
-			static T_RETURN LuaProtected(lua_State* lua, T_ARGS ... args)
+			// @throw std::exception
+			static constexpr T_RETURN LuaProtected(lua_State* lua, T_ARGS ... args)
 			{
 				if constexpr (std::is_same<T, void>::value)
 				{
@@ -402,7 +403,7 @@ public:
 			context.reset();
 		}
 
-		operator bool() const
+		constexpr operator bool() const
 		{
 			if (context)
 				switch (context->type)
@@ -543,12 +544,12 @@ private:
 			Detour() = delete;
 
 		public:
-			static int Execute(lua_State* lua)
+			static constexpr int Execute(lua_State* lua)
 			{
 				return Execute(lua, std::make_index_sequence<sizeof...(TArgs)> {});
 			}
 			template<size_t ... I>
-			static int Execute(lua_State* lua, std::index_sequence<I ...>)
+			static constexpr int Execute(lua_State* lua, std::index_sequence<I ...>)
 			{
 				if constexpr (std::is_same<T, void>::value)
 					return F(Peek<I>(lua) ...), 0;
@@ -558,7 +559,7 @@ private:
 
 		private:
 			template<size_t I>
-			static auto Peek(lua_State* lua)
+			static constexpr auto Peek(lua_State* lua)
 			{
 				typename std::tuple_element<I, std::tuple<TArgs ...>>::type value;
 
@@ -575,7 +576,7 @@ private:
 		CFunction() = delete;
 
 	public:
-		static int Execute(lua_State* lua)
+		static constexpr int Execute(lua_State* lua)
 		{
 			return Detour<decltype(F)>::Execute(lua);
 		}
@@ -795,7 +796,7 @@ private:
 		lua_pop(lua, static_cast<int>(size));
 	}
 	template<typename F>
-	static constexpr bool Pop(lua_State* lua, Function<F>& value)
+	static           bool Pop(lua_State* lua, Function<F>& value)
 	{
 		value = Function<F>(lua, luaL_ref(lua, LUA_REGISTRYINDEX));
 
