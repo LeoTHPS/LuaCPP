@@ -532,7 +532,6 @@ public:
 		}
 	};
 
-private:
 	template<auto F>
 	class CFunction
 	{
@@ -582,6 +581,7 @@ private:
 		}
 	};
 
+private:
 	lua_State* lua;
 	bool       lua_is_owned;
 
