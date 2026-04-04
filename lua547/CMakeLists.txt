@@ -46,3 +46,7 @@ add_library(lua547 STATIC
 )
 target_compile_definitions(lua547 PUBLIC -DLUA_COMPAT_5_3=1)
 target_include_directories(lua547 PUBLIC ${lua547_external_SOURCE_DIR}/src/)
+
+if(UNIX)
+	target_compile_definitions(lua547 PUBLIC -DLUA_USE_POSIX=1 -DLUA_USE_DLOPEN=1)
+endif()
