@@ -3,9 +3,11 @@
 #include <tuple>
 #include <memory>
 #include <string>
+#include <vector>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <utility>
 #include <exception>
 #include <filesystem>
@@ -197,16 +199,20 @@ private:
 		std::string message;
 
 	public:
-		Exception(std::string&& function, lua_State* lua)
-			: Exception(std::move(function), lua_tostring(lua, -1))
+		Exception()
 		{
 		}
-		Exception(std::string&& function, std::string&& message)
-			: message(message + " [Function: " + function + "]")
+		Exception(std::string_view function, int result)
+			: Exception(function, std::to_string(result))
 		{
 		}
-		Exception(std::string&& file, size_t line, std::string&& message)
-			: message(message + " [File: " + file + ", Line: " + std::to_string(line) + "]")
+		Exception(std::string_view function, lua_State* lua)
+			: Exception(function, lua_tostring(lua, -1))
+		{
+			lua_pop(lua, 1);
+		}
+		Exception(std::string_view function, std::string_view message)
+			: message(std::string("Error calling '").append(function).append("': ").append(message))
 		{
 		}
 
@@ -371,8 +377,8 @@ public:
 					return context->function(std::forward<TArgs>(args) ...);
 
 				case FunctionTypes::Lua:
-					if (auto type = lua_rawgeti(context->lua, LUA_REGISTRYINDEX, context->reference); type != LUA_TFUNCTION)
-						throw Exception("LuaCPP::Function::Execute", "lua_rawgeti returned " + std::to_string(type));
+					if (int type = lua_rawgeti(context->lua, LUA_REGISTRYINDEX, context->reference); type != LUA_TFUNCTION)
+						throw Exception("lua_rawgeti", type);
 					return ExecuteLua(context->lua, std::forward<TArgs>(args) ...);
 			}
 
@@ -390,8 +396,8 @@ public:
 					return context->function(std::forward<TArgs>(args) ...);
 
 				case FunctionTypes::Lua:
-					if (auto type = lua_rawgeti(context->lua, LUA_REGISTRYINDEX, context->reference); type != LUA_TFUNCTION)
-						throw Exception("LuaCPP::Function::Execute", "lua_rawgeti returned " + std::to_string(type));
+					if (int type = lua_rawgeti(context->lua, LUA_REGISTRYINDEX, context->reference); type != LUA_TFUNCTION)
+						throw Exception("lua_rawgeti", type);
 					return ExecuteLuaProtected(context->lua, std::forward<TArgs>(args) ...);
 			}
 
@@ -627,6 +633,21 @@ public:
 			throw Exception("luaL_dostring", this->lua);
 	}
 	// @throw std::exception
+	void Run(const void* buffer, size_t size, std::string_view name)
+	{
+		assert(lua != nullptr);
+
+		if (luaL_loadbuffer(lua, (const char*)buffer, size, name.data()) != LUA_OK)
+			throw Exception("luaL_loadbuffer", lua);
+
+		if (lua_pcall(lua, 0, 0, 0) != LUA_OK)
+		{
+			lua_remove(lua, -2);
+
+			throw Exception("lua_pcall", lua);
+		}
+	}
+	// @throw std::exception
 	// @return false if not found
 	bool RunFile(std::string_view path)
 	{
@@ -659,6 +680,191 @@ public:
 			case Libraries::Debug:     luaL_requiref(lua, LUA_DBLIBNAME,   &luaopen_debug, 1);     break;
 			case Libraries::Package:   luaL_requiref(lua, LUA_LOADLIBNAME, &luaopen_package, 1);   break;
 		}
+	}
+
+	// @throw std::exception
+	// @return false if not found
+	bool Compile(std::string_view lua, std::vector<uint8_t>& buffer, bool include_debug_information)
+	{
+		assert(this->lua != nullptr);
+
+		if (luaL_loadstring(this->lua, lua.data()) != LUA_OK)
+			throw Exception("luaL_loadstring", this->lua);
+
+		auto writer = [](lua_State* lua, const void* buffer, size_t size, void* param)->int
+		{
+			((std::vector<uint8_t>*)param)->resize(size);
+			memcpy(((std::vector<uint8_t>*)param)->data(), buffer, size);
+
+			return LUA_OK;
+		};
+
+		int result;
+
+		if ((result = lua_dump(this->lua, writer, &buffer, include_debug_information ? 0 : 1)) != LUA_OK)
+		{
+			lua_pop(this->lua, 1);
+
+			throw Exception("lua_dump", result);
+		}
+
+		return true;
+	}
+	// @throw std::exception
+	// @return false if not found
+	bool Compile(std::string_view lua, std::string_view destination, bool include_debug_information)
+	{
+		assert(this->lua != nullptr);
+
+		if (luaL_loadstring(this->lua, lua.data()) != LUA_OK)
+			throw Exception("luaL_loadstring", this->lua);
+
+		struct Context
+		{
+			std::ofstream stream;
+			Exception     exception;
+			bool          exception_is_set;
+		};
+
+		Context context = {};
+
+		context.stream.exceptions(std::ios::failbit | std::ios::badbit);
+
+		try
+		{
+			context.stream.open(destination.data(), std::ios::out | std::ios::trunc | std::ios::binary);
+		}
+		catch (const std::exception& exception)
+		{
+			lua_pop(this->lua, 1);
+
+			throw Exception("std::ofstream::open", exception.what());
+		}
+
+		auto writer = [](lua_State* lua, const void* buffer, size_t size, void* param)->int
+		{
+			auto context = (Context*)param;
+
+			try
+			{
+				context->stream.write((const char*)buffer, size);
+			}
+			catch (const std::exception& exception)
+			{
+				context->exception        = Exception("std::ofstream::write", exception.what());
+				context->exception_is_set = true;
+
+				return LUA_ERRERR;
+			}
+
+			return LUA_OK;
+		};
+
+		int result;
+
+		if ((result = lua_dump(this->lua, writer, &context, include_debug_information ? 0 : 1)) != LUA_OK)
+		{
+			lua_pop(this->lua, 1);
+
+			throw Exception("lua_dump", result);
+		}
+
+		return true;
+	}
+	// @throw std::exception
+	// @return false if not found
+	bool CompileFile(std::string_view source, std::vector<uint8_t>& buffer, bool include_debug_information)
+	{
+		assert(lua != nullptr);
+
+		if (!FileExists(source))
+			return false;
+
+		if (luaL_loadfile(this->lua, source.data()) != LUA_OK)
+			throw Exception("luaL_loadfile", this->lua);
+
+		auto writer = [](lua_State* lua, const void* buffer, size_t size, void* param)->int
+		{
+			((std::vector<uint8_t>*)param)->resize(size);
+			memcpy(((std::vector<uint8_t>*)param)->data(), buffer, size);
+
+			return LUA_OK;
+		};
+
+		int result;
+
+		if ((result = lua_dump(lua, writer, &buffer, include_debug_information ? 0 : 1)) != LUA_OK)
+		{
+			lua_pop(lua, 1);
+
+			throw Exception("lua_dump", result);
+		}
+
+		return true;
+	}
+	// @throw std::exception
+	// @return false if not found
+	bool CompileFile(std::string_view source, std::string_view destination, bool include_debug_information)
+	{
+		assert(lua != nullptr);
+
+		if (!FileExists(source))
+			return false;
+
+		if (luaL_loadfile(lua, source.data()) != LUA_OK)
+			throw Exception("luaL_loadfile", lua);
+
+		struct Context
+		{
+			std::ofstream stream;
+			Exception     exception;
+			bool          exception_is_set;
+		};
+
+		Context context = {};
+
+		context.stream.exceptions(std::ios::failbit | std::ios::badbit);
+
+		try
+		{
+			context.stream.open(destination.data(), std::ios::out | std::ios::trunc | std::ios::binary);
+		}
+		catch (const std::exception& exception)
+		{
+			lua_pop(lua, 1);
+
+			throw Exception("std::ofstream::open", exception.what());
+		}
+
+		auto writer = [](lua_State* lua, const void* buffer, size_t size, void* param)->int
+		{
+			auto context = (Context*)param;
+
+			try
+			{
+				context->stream.write((const char*)buffer, size);
+			}
+			catch (const std::exception& exception)
+			{
+				context->exception        = Exception("std::ofstream::write", exception.what());
+				context->exception_is_set = true;
+
+				return LUA_ERRERR;
+			}
+
+			return LUA_OK;
+		};
+
+		int result;
+
+		if ((result = lua_dump(lua, writer, &context, include_debug_information ? 0 : 1)) != LUA_OK)
+		{
+			lua_pop(lua, 1);
+
+			throw Exception("lua_dump", result);
+		}
+
+		return true;
 	}
 
 	// @return 0 on not found
@@ -1025,8 +1231,8 @@ private:
 				break;
 
 			case FunctionTypes::Lua:
-				if (auto value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.GetReference()); value_type != LUA_TFUNCTION)
-					throw Exception("LuaCPP::Push", "lua_rawgeti returned " + std::to_string(value_type));
+				if (int value_type = lua_rawgeti(lua, LUA_REGISTRYINDEX, value.GetReference()); value_type != LUA_TFUNCTION)
+					throw Exception("lua_rawgeti", value_type);
 				break;
 		}
 
