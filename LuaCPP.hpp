@@ -629,7 +629,7 @@ public:
 	{
 		assert(this->lua != nullptr);
 
-		if (luaL_dostring(this->lua, lua.data()) != LUA_OK)
+		if (luaL_dostring(this->lua, lua.data()))
 			throw Exception("luaL_dostring", this->lua);
 	}
 	// @throw std::exception
@@ -656,7 +656,7 @@ public:
 		if (!FileExists(path))
 			return false;
 
-		if (luaL_dofile(lua, path.data()) != LUA_OK)
+		if (luaL_dofile(lua, path.data()))
 			throw Exception("luaL_dofile", lua);
 
 		return true;
